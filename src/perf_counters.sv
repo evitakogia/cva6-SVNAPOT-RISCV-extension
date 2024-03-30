@@ -39,12 +39,15 @@ module perf_counters import ariane_pkg::*; (
   // from PC Gen
   input  exception_t                              ex_i,
   input  logic                                    eret_i,
-  input  bp_resolve_t                             resolved_branch_i
+  input  bp_resolve_t                             resolved_branch_i,
+  output logic [riscv::CSR_MIF_EMPTY : riscv::CSR_ML1_ICACHE_MISS][riscv::XLEN-1:0]  perf_counter_o
 );
   localparam logic [6:0] RegOffset = riscv::CSR_ML1_ICACHE_MISS >> 5;
-
+  int fd;
   logic [riscv::CSR_MIF_EMPTY : riscv::CSR_ML1_ICACHE_MISS][riscv::XLEN-1:0] perf_counter_d, perf_counter_q;
-
+  
+  assign perf_counter_o = perf_counter_q;
+  
   always_comb begin : perf_counters
     perf_counter_d = perf_counter_q;
     data_o = 'b0;
@@ -60,11 +63,14 @@ module perf_counters import ariane_pkg::*; (
       if (l1_dcache_miss_i)
         perf_counter_d[riscv::CSR_ML1_DCACHE_MISS] = perf_counter_q[riscv::CSR_ML1_DCACHE_MISS] + 1'b1;
 
-      if (itlb_miss_i)
+      if (itlb_miss_i) begin
         perf_counter_d[riscv::CSR_MITLB_MISS] = perf_counter_q[riscv::CSR_MITLB_MISS] + 1'b1;
-
-      if (dtlb_miss_i)
+        // $fdisplay(fd, "%t CSR_MITLB_MISS= %d", $time, perf_counter_d[riscv::CSR_MITLB_MISS]);
+      end
+      if (dtlb_miss_i) begin
         perf_counter_d[riscv::CSR_MDTLB_MISS] = perf_counter_q[riscv::CSR_MDTLB_MISS] + 1'b1;
+        // $fdisplay(fd, "%t CSR_MDTLB_MISS= %d", $time, perf_counter_d[riscv::CSR_MDTLB_MISS]);
+      end
 
       // instruction related perf counters
       for (int unsigned i = 0; i < NR_COMMIT_PORTS-1; i++) begin
@@ -109,7 +115,7 @@ module perf_counters import ariane_pkg::*; (
     end
 
     // write after read
-    data_o = perf_counter_q[{RegOffset,addr_i}];
+    //   data_o = perf_counter_q[{RegOffset,addr_i}];
     if (we_i) begin
       perf_counter_d[{RegOffset,addr_i}] = data_i;
     end
@@ -123,7 +129,10 @@ module perf_counters import ariane_pkg::*; (
       perf_counter_q <= '0;
     end else begin
       perf_counter_q <= perf_counter_d;
+      // $fdisplay(fd, "%t addr= %h", $time, addr_i);
     end
   end
-
+  // initial begin
+  //     fd = $fopen("perf_counters.txt", "w");
+  // end
 endmodule

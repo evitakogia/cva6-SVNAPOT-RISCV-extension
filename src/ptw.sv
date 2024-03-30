@@ -70,7 +70,7 @@ module ptw import ariane_pkg::*; #(
     // input registers
     logic data_rvalid_q;
     logic [63:0] data_rdata_q;
-
+    int fd;
     riscv::pte_t pte;
     assign pte = riscv::pte_t'(data_rdata_q);
 
@@ -215,6 +215,7 @@ module ptw import ariane_pkg::*; #(
                     vaddr_n             = itlb_vaddr_i;
                     state_d             = WAIT_GRANT;
                     itlb_miss_o         = 1'b1;
+                    $fdisplay(fd, "%t PTW: ITLB miss -- vaddr: %h", $time, vaddr_n);
                 // we got an DTLB miss
                 end else if (en_ld_st_translation_i & dtlb_access_i & ~dtlb_hit_i) begin
                     ptw_pptr_n          = {satp_ppn_i, dtlb_vaddr_i[riscv::SV-1:30], 3'b0};
@@ -222,6 +223,7 @@ module ptw import ariane_pkg::*; #(
                     vaddr_n             = dtlb_vaddr_i;
                     state_d             = WAIT_GRANT;
                     dtlb_miss_o         = 1'b1;
+                    $fdisplay(fd, "%t PTW: DTLB miss -- vaddr: %h", $time, vaddr_n);
                 end
             end
 
@@ -268,9 +270,10 @@ module ptw import ariane_pkg::*; #(
                                 // to the access flag since we let the access flag be managed by SW.
                                 if (!pte.x || !pte.a)
                                   state_d = PROPAGATE_ERROR;
-                                else
-                                  itlb_update_o.valid = 1'b1;
-
+                                else begin
+                                    itlb_update_o.valid = 1'b1;
+                                    $fdisplay(fd, "%t PTW: itlb_update_o.valid", $time);
+                                end
                             end else begin
                                 // ------------
                                 // Update DTLB
@@ -282,6 +285,7 @@ module ptw import ariane_pkg::*; #(
                                 // entry into the TLB.
                                 if (pte.a && (pte.r || (pte.x && mxr_i))) begin
                                   dtlb_update_o.valid = 1'b1;
+                                  $fdisplay(fd, "%t PTW: dtlb_update_o.valid", $time);
                                 end else begin
                                   state_d   = PROPAGATE_ERROR;
                                 end
@@ -312,12 +316,14 @@ module ptw import ariane_pkg::*; #(
                                 // we are in the second level now
                                 ptw_lvl_n  = LVL2;
                                 ptw_pptr_n = {pte.ppn, vaddr_q[29:21], 3'b0};
+                                $fdisplay(fd, "%t PTW: LVL1 -- vaddr: %h", $time, vaddr_n);
                             end
 
                             if (ptw_lvl_q == LVL2) begin
                                 // here we received a pointer to the third level
                                 ptw_lvl_n  = LVL3;
                                 ptw_pptr_n = {pte.ppn, vaddr_q[20:12], 3'b0};
+                                $fdisplay(fd, "%t PTW: LVL2 -- vaddr: %h", $time, vaddr_n);
                             end
 
                             state_d = WAIT_GRANT;
@@ -326,6 +332,7 @@ module ptw import ariane_pkg::*; #(
                               // Should already be the last level page table => Error
                               ptw_lvl_n   = LVL3;
                               state_d = PROPAGATE_ERROR;
+                              $fdisplay(fd, "%t PTW: LVL3 -- PROPAGATE_ERROR", $time);
                             end
                         end
                     end
@@ -401,5 +408,8 @@ module ptw import ariane_pkg::*; #(
         end
     end
 
+    initial begin
+        fd = $fopen("ptw.txt", "w");
+    end
 endmodule
 /* verilator lint_on WIDTH */

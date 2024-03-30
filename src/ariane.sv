@@ -198,6 +198,7 @@ module ariane import ariane_pkg::*; #(
   logic                     dtlb_miss_ex_perf;
   logic                     dcache_miss_cache_perf;
   logic                     icache_miss_cache_perf;
+  logic [riscv::CSR_MIF_EMPTY : riscv::CSR_ML1_ICACHE_MISS][riscv::XLEN-1:0] perf_counter;
   // --------------
   // CTRL <-> *
   // --------------
@@ -541,6 +542,7 @@ module ariane import ariane_pkg::*; #(
     .perf_we_o              ( we_csr_perf                   ),
     .pmpcfg_o               ( pmpcfg                        ),
     .pmpaddr_o              ( pmpaddr                       ),
+    .perf_counter_i         ( perf_counter                  ),
     .debug_req_i,
     .ipi_i,
     .irq_i,
@@ -569,7 +571,8 @@ module ariane import ariane_pkg::*; #(
     .if_empty_i        ( ~fetch_valid_if_id     ),
     .ex_i              ( ex_commit              ),
     .eret_i            ( eret                   ),
-    .resolved_branch_i ( resolved_branch        )
+    .resolved_branch_i ( resolved_branch        ),
+    .perf_counter_o    ( perf_counter           )
   );
 
   // ------------

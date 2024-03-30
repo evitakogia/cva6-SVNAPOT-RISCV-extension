@@ -46,7 +46,7 @@ module tlb import ariane_pkg::*; #(
       logic                  is_1G;
       logic                  valid;
     } [TLB_ENTRIES-1:0] tags_q, tags_n;
-
+    int fd;
     riscv::pte_t [TLB_ENTRIES-1:0] content_q, content_n;
     logic [8:0] vpn0, vpn1;
     logic [riscv::VPN2:0] vpn2;
@@ -86,6 +86,7 @@ module tlb import ariane_pkg::*; #(
                         lu_content_o = content_q[i];
                         lu_hit_o     = 1'b1;
                         lu_hit[i]    = 1'b1;
+                        $fdisplay(fd, "%t L1 TLB hit -- i: %d -- tag: %h", $time, i, tags_q[i].vpn0);
                     end
                 end
             end
@@ -144,6 +145,7 @@ module tlb import ariane_pkg::*; #(
                 };
                 // and content as well
                 content_n[i] = update_i.content;
+                $fdisplay(fd, "%t L1: Update from PTW: %h cont: %d i:%d", $time, update_i.vpn [18+riscv::VPN2:0], content_n[i], i);
             end
         end
     end
@@ -269,5 +271,7 @@ module tlb import ariane_pkg::*; #(
 
     `endif
     //pragma translate_on
-
+    initial begin
+        fd = $fopen("tlb.txt", "w");
+    end
 endmodule

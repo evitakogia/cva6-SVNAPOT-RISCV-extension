@@ -85,7 +85,8 @@ module csr_regfile import ariane_pkg::*; #(
     output logic                  perf_we_o,
     // PMPs
     output riscv::pmpcfg_t [15:0] pmpcfg_o,   // PMP configuration containing pmpcfg for max 16 PMPs
-    output logic [15:0][riscv::PLEN-3:0] pmpaddr_o            // PMP addresses
+    output logic [15:0][riscv::PLEN-3:0] pmpaddr_o,            // PMP addresses
+    input logic [riscv::CSR_MIF_EMPTY : riscv::CSR_ML1_ICACHE_MISS][riscv::XLEN-1:0]  perf_counter_i
 );
     // internal signal to keep track of access exceptions
     logic        read_access_exception, update_access_exception, privilege_violation;
@@ -142,7 +143,7 @@ module csr_regfile import ariane_pkg::*; #(
     riscv::pmpcfg_t [15:0]    pmpcfg_q,  pmpcfg_d;
     logic [15:0][riscv::PLEN-3:0]        pmpaddr_q,  pmpaddr_d;
 
-
+    localparam logic [6:0] RegOffset = riscv::CSR_ML1_ICACHE_MISS >> 5;
     assign pmpcfg_o = pmpcfg_q[15:0];
     assign pmpaddr_o = pmpaddr_q;
 
@@ -247,20 +248,22 @@ module csr_regfile import ariane_pkg::*; #(
                 // Counters and Timers
                 riscv::CSR_CYCLE:              csr_rdata = cycle_q;
                 riscv::CSR_INSTRET:            csr_rdata = instret_q;
-                riscv::CSR_ML1_ICACHE_MISS,
-                riscv::CSR_ML1_DCACHE_MISS,
-                riscv::CSR_MITLB_MISS,
-                riscv::CSR_MDTLB_MISS,
-                riscv::CSR_MLOAD,
-                riscv::CSR_MSTORE,
-                riscv::CSR_MEXCEPTION,
-                riscv::CSR_MEXCEPTION_RET,
-                riscv::CSR_MBRANCH_JUMP,
-                riscv::CSR_MCALL,
-                riscv::CSR_MRET,
-                riscv::CSR_MMIS_PREDICT,
-                riscv::CSR_MSB_FULL,
-                riscv::CSR_MIF_EMPTY,
+
+                riscv::CSR_L1_ICACHE_MISS,
+                riscv::CSR_L1_DCACHE_MISS,
+                riscv::CSR_ITLB_MISS,
+                riscv::CSR_DTLB_MISS,
+                riscv::CSR_LOAD,
+                riscv::CSR_STORE,
+                riscv::CSR_EXCEPTION,
+                riscv::CSR_EXCEPTION_RET,
+                riscv::CSR_BRANCH_JUMP,
+                riscv::CSR_CALL,
+                riscv::CSR_RET,
+                riscv::CSR_MIS_PREDICT,
+                riscv::CSR_SB_FULL,
+                riscv::CSR_IF_EMPTY:           csr_rdata = perf_counter_i[{RegOffset,csr_addr.address[4:0]}];
+
                 riscv::CSR_MHPM_COUNTER_17,
                 riscv::CSR_MHPM_COUNTER_18,
                 riscv::CSR_MHPM_COUNTER_19,
