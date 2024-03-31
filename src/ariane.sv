@@ -196,9 +196,10 @@ module ariane import ariane_pkg::*; #(
   logic                     icache_flush_ctrl_cache;
   logic                     itlb_miss_ex_perf;
   logic                     dtlb_miss_ex_perf;
+  logic                     l2_tlb_miss_ex_perf;
   logic                     dcache_miss_cache_perf;
   logic                     icache_miss_cache_perf;
-  logic [riscv::CSR_MIF_EMPTY : riscv::CSR_ML1_ICACHE_MISS][riscv::XLEN-1:0] perf_counter;
+  logic [riscv::CSR_MHPM_COUNTER_17 : riscv::CSR_ML1_ICACHE_MISS][riscv::XLEN-1:0] perf_counter;
   // --------------
   // CTRL <-> *
   // --------------
@@ -422,6 +423,7 @@ module ariane import ariane_pkg::*; #(
     // Performance counters
     .itlb_miss_o            ( itlb_miss_ex_perf           ),
     .dtlb_miss_o            ( dtlb_miss_ex_perf           ),
+    .l2_tlb_miss_o          (l2_tlb_miss_ex_perf          ),
     // Memory Management
     .enable_translation_i   ( enable_translation_csr_ex   ), // from CSR
     .en_ld_st_translation_i ( en_ld_st_translation_csr_ex ),
@@ -567,6 +569,7 @@ module ariane import ariane_pkg::*; #(
     .l1_dcache_miss_i  ( dcache_miss_cache_perf ),
     .itlb_miss_i       ( itlb_miss_ex_perf      ),
     .dtlb_miss_i       ( dtlb_miss_ex_perf      ),
+    .l2_tlb_miss_i     (l2_tlb_miss_ex_perf     ),
     .sb_full_i         ( sb_full                ),
     .if_empty_i        ( ~fetch_valid_if_id     ),
     .ex_i              ( ex_commit              ),

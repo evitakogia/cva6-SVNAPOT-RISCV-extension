@@ -32,10 +32,12 @@ int main(int argc, char *argv[]) {
 		
 	}
 
-	// for (int i = 128; i <= 512; i *= 2)
+	page_stride(512, runs);
+
+	// for (int i = 16; i <= 512; i *= 2)
 	// {	
-		page_stride(32, runs);
-		// random_fetch(i, runs);
+	// 	page_stride(i, runs);
+	// 	// random_fetch(i, runs);
 	// }
 
 	return 0;
@@ -62,7 +64,7 @@ void page_stride(uint32_t size, uint64_t runs) {
 	cycles = read_csr(cycle);
 	dtlb_misses = read_csr(0xc06);
 	itlb_misses = read_csr(0xc05);
-	// l2_tlb_misses = read_csr(hpmcounter5);
+	l2_tlb_misses = read_csr(0xc07);
 	
 	for (uint64_t i = 0; i < runs*PAGE_SIZE ; i += PAGE_SIZE) {
 		pages[i % (size * PAGE_SIZE)] = 1;
@@ -71,15 +73,15 @@ void page_stride(uint32_t size, uint64_t runs) {
 	cycles = read_csr(cycle) - cycles;
 	dtlb_misses = read_csr(0xc06) - dtlb_misses;
 	itlb_misses = read_csr(0xc05) - itlb_misses;
-	// l2_tlb_misses = read_csr(hpmcounter5) - l2_tlb_misses;
+	l2_tlb_misses = read_csr(0xc07) - l2_tlb_misses;
 
-	printf("\nPage sweep | %u pages, %lu runs\n\n", size, runs);
-	printf("------------------------\n");
+	// printf("\nPage sweep | %u pages, %lu runs\n\n", size, runs);
+	// printf("------------------------\n");
 	printf("DTLB Misses     = %lu\n", dtlb_misses);
 	printf("ITLB Misses     = %lu\n", itlb_misses);
-	// printf("L2 TLB Misses   = %lu\n", l2_tlb_misses);
+	printf("L2 TLB Misses   = %lu\n", l2_tlb_misses);
 	printf("Total cycles    = %lu\n", cycles);
-	printf("------------------------\n");
+	// printf("------------------------\n");
 	
 	free(pages);
 }
@@ -102,7 +104,7 @@ void random_fetch(uint64_t size, uint64_t runs) {
 	cycles = read_csr(cycle);
 	dtlb_misses = read_csr(0xc06);
 	itlb_misses = read_csr(0xc05);
-	// l2_tlb_misses = read_csr(hpmcounter5);
+	l2_tlb_misses = read_csr(0xc07);
 
 	for(uint32_t i = 0; i <= runs; i++) {
 		j = rand() % PAGE_SIZE*size;
@@ -112,14 +114,14 @@ void random_fetch(uint64_t size, uint64_t runs) {
 	cycles = read_csr(cycle) - cycles;
 	dtlb_misses = read_csr(0xc06) - dtlb_misses;
 	itlb_misses = read_csr(0xc05) - itlb_misses;
-	// l2_tlb_misses = read_csr(hpmcounter5) - l2_tlb_misses;
+	l2_tlb_misses = read_csr(0xc07) - l2_tlb_misses;
 
 
 	printf("\nRandom fetch | %lu pages, %lu runs\n\n", size, runs);
 	printf("------------------------\n");
 	printf("DTLB Misses     = %lu\n", dtlb_misses);
 	printf("ITLB Misses     = %lu\n", itlb_misses);
-	// printf("L2 TLB Misses   = %lu\n", l2_tlb_misses);
+	printf("L2 TLB Misses   = %lu\n", l2_tlb_misses);
 	printf("Total cycles    = %lu\n", cycles);
 	printf("------------------------\n");
 	

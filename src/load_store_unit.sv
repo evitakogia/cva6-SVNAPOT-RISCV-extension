@@ -60,6 +60,7 @@ module load_store_unit import ariane_pkg::*; #(
     // Performance counters
     output logic                     itlb_miss_o,
     output logic                     dtlb_miss_o,
+    output logic                     l2_tlb_miss_o,
 
     // interface to dcache
     input  dcache_req_o_t [2:0]      dcache_req_ports_i,

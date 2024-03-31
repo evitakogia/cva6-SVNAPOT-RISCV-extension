@@ -103,6 +103,7 @@ module ex_stage import ariane_pkg::*; #(
     // Performance counters
     output logic                                   itlb_miss_o,
     output logic                                   dtlb_miss_o,
+    output logic                                   l2_tlb_miss_o,
     // PMPs
     input  riscv::pmpcfg_t [15:0]                  pmpcfg_i,
     input  logic[15:0][riscv::PLEN-3:0]            pmpaddr_i
@@ -308,6 +309,7 @@ module ex_stage import ariane_pkg::*; #(
         .flush_tlb_i,
         .itlb_miss_o,
         .dtlb_miss_o,
+        .l2_tlb_miss_o,
         .dcache_req_ports_i,
         .dcache_req_ports_o,
         .dcache_wbuffer_empty_i,

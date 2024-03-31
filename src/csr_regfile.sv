@@ -86,7 +86,7 @@ module csr_regfile import ariane_pkg::*; #(
     // PMPs
     output riscv::pmpcfg_t [15:0] pmpcfg_o,   // PMP configuration containing pmpcfg for max 16 PMPs
     output logic [15:0][riscv::PLEN-3:0] pmpaddr_o,            // PMP addresses
-    input logic [riscv::CSR_MIF_EMPTY : riscv::CSR_ML1_ICACHE_MISS][riscv::XLEN-1:0]  perf_counter_i
+    input logic [riscv::CSR_MHPM_COUNTER_17 : riscv::CSR_ML1_ICACHE_MISS][riscv::XLEN-1:0]  perf_counter_i
 );
     // internal signal to keep track of access exceptions
     logic        read_access_exception, update_access_exception, privilege_violation;
@@ -262,9 +262,9 @@ module csr_regfile import ariane_pkg::*; #(
                 riscv::CSR_RET,
                 riscv::CSR_MIS_PREDICT,
                 riscv::CSR_SB_FULL,
-                riscv::CSR_IF_EMPTY:           csr_rdata = perf_counter_i[{RegOffset,csr_addr.address[4:0]}];
+                riscv::CSR_IF_EMPTY,
+                riscv::CSR_HPM_COUNTER_17:           csr_rdata = perf_counter_i[{RegOffset,csr_addr.address[4:0]}];
 
-                riscv::CSR_MHPM_COUNTER_17,
                 riscv::CSR_MHPM_COUNTER_18,
                 riscv::CSR_MHPM_COUNTER_19,
                 riscv::CSR_MHPM_COUNTER_20,
@@ -1133,6 +1133,7 @@ module csr_regfile import ariane_pkg::*; #(
             mepc_q                 <= mepc_d;
             mcause_q               <= mcause_d;
             mcounteren_q           <= mcounteren_d;
+            // mcounteren_q           <= {riscv::XLEN{1'b1}};
             mscratch_q             <= mscratch_d;
             mtval_q                <= mtval_d;
             dcache_q               <= dcache_d;
@@ -1142,6 +1143,7 @@ module csr_regfile import ariane_pkg::*; #(
             scause_q               <= scause_d;
             stvec_q                <= stvec_d;
             scounteren_q           <= scounteren_d;
+            // scounteren_q           <= {riscv::XLEN{1'b1}};
             sscratch_q             <= sscratch_d;
             stval_q                <= stval_d;
             satp_q                 <= satp_d;

@@ -58,6 +58,7 @@ module mmu import ariane_pkg::*; #(
     // Performance counters
     output logic                            itlb_miss_o,
     output logic                            dtlb_miss_o,
+    output logic                            l2_tlb_miss_o,
     // PTW memory interface
     input  dcache_req_o_t                   req_port_i,
     output dcache_req_i_t                   req_port_o,
@@ -88,7 +89,9 @@ module mmu import ariane_pkg::*; #(
     logic        dtlb_is_2M;
     logic        dtlb_is_1G;
     logic        dtlb_lu_hit;
-
+        
+    logic [9:0]  l2_tlb_hit;
+    tlb_update_t l1_tlb_update;
 
     // Assignments
     assign itlb_lu_access = icache_areq_i.fetch_req;
@@ -114,7 +117,10 @@ module mmu import ariane_pkg::*; #(
 
         .lu_is_2M_o       ( itlb_is_2M                 ),
         .lu_is_1G_o       ( itlb_is_1G                 ),
-        .lu_hit_o         ( itlb_lu_hit                )
+        .lu_hit_o         ( itlb_lu_hit                ),
+        //L2_TLB        
+        .update_from_l2_tlb_i (l1_tlb_update),
+        .l2_tlb_hit_i         (l2_tlb_hit)//l2_tlb_hit, 0
     );
 
     tlb #(
@@ -129,16 +135,43 @@ module mmu import ariane_pkg::*; #(
 
         .lu_access_i      ( dtlb_lu_access              ),
         .lu_asid_i        ( asid_i                      ),
-	      .asid_to_be_flushed_i  ( asid_to_be_flushed_i   ),
-	      .vaddr_to_be_flushed_i ( vaddr_to_be_flushed_i  ),
+	    .asid_to_be_flushed_i  ( asid_to_be_flushed_i   ),
+	    .vaddr_to_be_flushed_i ( vaddr_to_be_flushed_i  ),
         .lu_vaddr_i       ( lsu_vaddr_i                 ),
         .lu_content_o     ( dtlb_content                ),
 
         .lu_is_2M_o       ( dtlb_is_2M                  ),
         .lu_is_1G_o       ( dtlb_is_1G                  ),
-        .lu_hit_o         ( dtlb_lu_hit                 )
+        .lu_hit_o         ( dtlb_lu_hit                 ),
+        //L2_TLB        
+        .update_from_l2_tlb_i (l1_tlb_update),
+        .l2_tlb_hit_i         (l2_tlb_hit)//l2_tlb_hit, 0
     );
-
+    l2_tlb #(
+        .SETS             (128),
+        .WAYS             (4),
+        .POW              (7),
+        .ASID_WIDTH       (ASID_WIDTH)
+    ) l2_tlb (
+        .clk_i            (clk_i),
+        .rst_ni           (rst_ni),
+        .flush_i          (flush_tlb_i),
+        // .lu_asid_i            (asid_i),      
+        .dtlb_lu_access_i (dtlb_lu_access),
+        .itlb_lu_access_i (itlb_lu_access),
+        .dtlb_vaddr_i     (lsu_vaddr_i),
+        .itlb_vaddr_i     (icache_areq_i.fetch_vaddr),
+        .asid_to_be_flushed_i   (asid_to_be_flushed_i),
+        .vaddr_to_be_flushed_i  (vaddr_to_be_flushed_i),
+        .dtlb_update_in   (update_ptw_dtlb),
+        .itlb_update_in   (update_ptw_itlb),
+        .l1_dtlb_hit      (dtlb_lu_hit),
+        .l1_itlb_hit      (itlb_lu_hit),       
+        .l2_tlb_hit_o     (l2_tlb_hit),
+        .l1_tlb_update_o  (l1_tlb_update),
+        .enable_translation_i  (enable_translation_i),
+        .en_ld_st_translation_i(en_ld_st_translation_i)
+    );
 
     ptw  #(
         .ASID_WIDTH             ( ASID_WIDTH            ),
@@ -163,6 +196,10 @@ module mmu import ariane_pkg::*; #(
         .dtlb_access_i          ( dtlb_lu_access        ),
         .dtlb_hit_i             ( dtlb_lu_hit           ),
         .dtlb_vaddr_i           ( lsu_vaddr_i           ),
+        
+        //L2_TLB
+        .l2_tlb_hit_i          (l2_tlb_hit),//l2_tlb_hit, 0
+        .l2_tlb_vaddr_i        (l1_tlb_update),
 
         .req_port_i             ( req_port_i            ),
         .req_port_o             ( req_port_o            ),

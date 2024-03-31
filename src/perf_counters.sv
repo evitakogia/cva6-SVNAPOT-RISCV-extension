@@ -32,6 +32,7 @@ module perf_counters import ariane_pkg::*; (
   // from MMU
   input  logic                                    itlb_miss_i,
   input  logic                                    dtlb_miss_i,
+  input logic                                     l2_tlb_miss_i,
   // from issue stage
   input  logic                                    sb_full_i,
   // from frontend
@@ -40,11 +41,11 @@ module perf_counters import ariane_pkg::*; (
   input  exception_t                              ex_i,
   input  logic                                    eret_i,
   input  bp_resolve_t                             resolved_branch_i,
-  output logic [riscv::CSR_MIF_EMPTY : riscv::CSR_ML1_ICACHE_MISS][riscv::XLEN-1:0]  perf_counter_o
+  output logic [riscv::CSR_MHPM_COUNTER_17 : riscv::CSR_ML1_ICACHE_MISS][riscv::XLEN-1:0]  perf_counter_o
 );
   localparam logic [6:0] RegOffset = riscv::CSR_ML1_ICACHE_MISS >> 5;
   int fd;
-  logic [riscv::CSR_MIF_EMPTY : riscv::CSR_ML1_ICACHE_MISS][riscv::XLEN-1:0] perf_counter_d, perf_counter_q;
+  logic [riscv::CSR_MHPM_COUNTER_17 : riscv::CSR_ML1_ICACHE_MISS][riscv::XLEN-1:0] perf_counter_d, perf_counter_q;
   
   assign perf_counter_o = perf_counter_q;
   
@@ -72,11 +73,15 @@ module perf_counters import ariane_pkg::*; (
         // $fdisplay(fd, "%t CSR_MDTLB_MISS= %d", $time, perf_counter_d[riscv::CSR_MDTLB_MISS]);
       end
 
+      if (l2_tlb_miss_i)
+        perf_counter_d[riscv::CSR_MLOAD] = perf_counter_q[riscv::CSR_MLOAD] + 1'b1;
+       
+
       // instruction related perf counters
       for (int unsigned i = 0; i < NR_COMMIT_PORTS-1; i++) begin
         if (commit_ack_i[i]) begin
           if (commit_instr_i[i].fu == LOAD)
-            perf_counter_d[riscv::CSR_MLOAD] = perf_counter_q[riscv::CSR_MLOAD] + 1'b1;
+            perf_counter_d[riscv::CSR_MHPM_COUNTER_17] = perf_counter_q[riscv::CSR_MHPM_COUNTER_17] + 1'b1;
 
           if (commit_instr_i[i].fu == STORE)
             perf_counter_d[riscv::CSR_MSTORE] = perf_counter_q[riscv::CSR_MSTORE] + 1'b1;
@@ -113,7 +118,6 @@ module perf_counters import ariane_pkg::*; (
         perf_counter_d[riscv::CSR_MIF_EMPTY] = perf_counter_q[riscv::CSR_MIF_EMPTY] + 1'b1;
       end
     end
-
     // write after read
     //   data_o = perf_counter_q[{RegOffset,addr_i}];
     if (we_i) begin

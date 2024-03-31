@@ -44,6 +44,7 @@ filesets:
       - src/store_buffer.sv
       - src/store_unit.sv
       - src/tlb.sv
+      - src/l2_tlb.sv
     file_type : systemVerilogSource
     depend :
       - pulp-platform.org::axi_mem_if

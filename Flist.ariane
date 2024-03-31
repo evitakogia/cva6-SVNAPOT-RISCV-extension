@@ -113,6 +113,7 @@ src/store_buffer.sv
 src/amo_buffer.sv
 src/store_unit.sv
 src/tlb.sv
+src/l2_tlb.sv
 src/commit_stage.sv
 src/cache_subsystem/wt_dcache_ctrl.sv
 src/cache_subsystem/wt_dcache_mem.sv

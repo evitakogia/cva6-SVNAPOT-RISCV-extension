@@ -53,12 +53,16 @@ module ptw import ariane_pkg::*; #(
     input  logic                    dtlb_access_i,
     input  logic                    dtlb_hit_i,
     input  logic [riscv::VLEN-1:0]  dtlb_vaddr_i,
+    //L2_TLB
+    input logic                     l2_tlb_hit_i,
+    input  tlb_update_t             l2_tlb_vaddr_i,
     // from CSR file
     input  logic [riscv::PPNW-1:0]  satp_ppn_i, // ppn from satp
     input  logic                    mxr_i,
     // Performance counters
     output logic                    itlb_miss_o,
     output logic                    dtlb_miss_o,
+    output logic                    l2_tlb_miss_o,
     // PMP
 
     input  riscv::pmpcfg_t [15:0]   pmpcfg_i,
@@ -70,7 +74,7 @@ module ptw import ariane_pkg::*; #(
     // input registers
     logic data_rvalid_q;
     logic [63:0] data_rdata_q;
-    int fd;
+
     riscv::pte_t pte;
     assign pte = riscv::pte_t'(data_rdata_q);
 
@@ -86,7 +90,8 @@ module ptw import ariane_pkg::*; #(
     enum logic [1:0] {
         LVL1, LVL2, LVL3
     } ptw_lvl_q, ptw_lvl_n;
-
+    
+    int fd;
     // is this an instruction page table walk?
     logic is_instr_ptw_q,   is_instr_ptw_n;
     logic global_mapping_q, global_mapping_n;
@@ -151,7 +156,6 @@ module ptw import ariane_pkg::*; #(
         .conf_i        ( pmpcfg_i           ),
         .allow_o       ( allow_access       )
     );
-
     //-------------------
     // Page table walker
     //-------------------
@@ -198,7 +202,8 @@ module ptw import ariane_pkg::*; #(
         vaddr_n               = vaddr_q;
 
         itlb_miss_o           = 1'b0;
-        dtlb_miss_o           = 1'b0;
+        dtlb_miss_o           = 1'b0;  
+        l2_tlb_miss_o          = 1'b0;
 
         case (state_q)
 
@@ -209,21 +214,26 @@ module ptw import ariane_pkg::*; #(
                 is_instr_ptw_n   = 1'b0;
                 // if we got an ITLB miss
                 if (enable_translation_i & itlb_access_i & ~itlb_hit_i & ~dtlb_access_i) begin
-                    ptw_pptr_n          = {satp_ppn_i, itlb_vaddr_i[riscv::SV-1:30], 3'b0};
-                    is_instr_ptw_n      = 1'b1;
-                    tlb_update_asid_n   = asid_i;
-                    vaddr_n             = itlb_vaddr_i;
-                    state_d             = WAIT_GRANT;
-                    itlb_miss_o         = 1'b1;
+                itlb_miss_o       = 1'b1;
+                if (~l2_tlb_hit_i) begin
+                    ptw_pptr_n        = {satp_ppn_i, itlb_vaddr_i[riscv::SV-1:30], 3'b0};
+                    is_instr_ptw_n    = 1'b1;
+                    tlb_update_asid_n = asid_i;
+                    vaddr_n           = itlb_vaddr_i;
+                    state_d           = WAIT_GRANT;
                     $fdisplay(fd, "%t PTW: ITLB miss -- vaddr: %h", $time, vaddr_n);
+                end
+
                 // we got an DTLB miss
                 end else if (en_ld_st_translation_i & dtlb_access_i & ~dtlb_hit_i) begin
-                    ptw_pptr_n          = {satp_ppn_i, dtlb_vaddr_i[riscv::SV-1:30], 3'b0};
-                    tlb_update_asid_n   = asid_i;
-                    vaddr_n             = dtlb_vaddr_i;
-                    state_d             = WAIT_GRANT;
-                    dtlb_miss_o         = 1'b1;
+                dtlb_miss_o       = 1'b1;
+                if (~l2_tlb_hit_i) begin
+                    ptw_pptr_n        = {satp_ppn_i, dtlb_vaddr_i[riscv::SV-1:30], 3'b0};
+                    tlb_update_asid_n = asid_i;
+                    vaddr_n           = dtlb_vaddr_i;
+                    state_d           = WAIT_GRANT;
                     $fdisplay(fd, "%t PTW: DTLB miss -- vaddr: %h", $time, vaddr_n);
+                end
                 end
             end
 
@@ -257,6 +267,7 @@ module ptw import ariane_pkg::*; #(
                     // -----------
                     else begin
                         state_d = IDLE;
+                        if (ptw_lvl_q == LVL1 && l2_tlb_hit_i == 0'b0) l2_tlb_miss_o = 1'b1;
                         // it is a valid PTE
                         // if pte.r = 1 or pte.x = 1 it is a valid PTE
                         if (pte.r || pte.x) begin
@@ -285,9 +296,9 @@ module ptw import ariane_pkg::*; #(
                                 // entry into the TLB.
                                 if (pte.a && (pte.r || (pte.x && mxr_i))) begin
                                   dtlb_update_o.valid = 1'b1;
-                                  $fdisplay(fd, "%t PTW: dtlb_update_o.valid", $time);
                                 end else begin
                                   state_d   = PROPAGATE_ERROR;
+                                  $fdisplay(fd, "%t PTW: dtlb_update_o.valid", $time);
                                 end
                                 // Request is a store: perform some additional checks
                                 // If the request was a store and the page is not write-able, raise an error
@@ -377,6 +388,11 @@ module ptw import ariane_pkg::*; #(
             end
             state_d = IDLE;
         end
+        if ((l2_tlb_hit_i) ) begin
+            l2_tlb_miss_o = 1'b0;
+            state_d = IDLE;
+            $fdisplay(fd, "%t PTW: L2 TLB HIT!!!", $time);
+        end
     end
 
     // sequential process
@@ -407,7 +423,6 @@ module ptw import ariane_pkg::*; #(
             kill_req_q         <= kill_req_d;
         end
     end
-
     initial begin
         fd = $fopen("ptw.txt", "w");
     end

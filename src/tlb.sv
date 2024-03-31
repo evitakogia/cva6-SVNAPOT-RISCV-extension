@@ -24,6 +24,7 @@ module tlb import ariane_pkg::*; #(
     input  logic                    flush_i,  // Flush signal
     // Update TLB
     input  tlb_update_t             update_i,
+    input  tlb_update_t             update_from_l2_tlb_i,
     // Lookup signals
     input  logic                    lu_access_i,
     input  logic [ASID_WIDTH-1:0]   lu_asid_i,
@@ -33,7 +34,9 @@ module tlb import ariane_pkg::*; #(
     input  logic [riscv::VLEN-1:0]  vaddr_to_be_flushed_i,
     output logic                    lu_is_2M_o,
     output logic                    lu_is_1G_o,
-    output logic                    lu_hit_o
+    output logic                    lu_hit_o,
+    //L2_TLB
+    input  logic                    l2_tlb_hit_i
 );
 
     // SV39 defines three levels of page tables
@@ -46,12 +49,13 @@ module tlb import ariane_pkg::*; #(
       logic                  is_1G;
       logic                  valid;
     } [TLB_ENTRIES-1:0] tags_q, tags_n;
-    int fd;
+
     riscv::pte_t [TLB_ENTRIES-1:0] content_q, content_n;
     logic [8:0] vpn0, vpn1;
     logic [riscv::VPN2:0] vpn2;
     logic [TLB_ENTRIES-1:0] lu_hit;     // to replacement logic
     logic [TLB_ENTRIES-1:0] replace_en; // replace the following entry, set by replacement strategy
+    int fd;
     //-------------
     // Translation
     //-------------
@@ -77,6 +81,7 @@ module tlb import ariane_pkg::*; #(
                     lu_content_o = content_q[i];
                     lu_hit_o   = 1'b1;
                     lu_hit[i]  = 1'b1;
+                    $fdisplay(fd, "%t L1 TLB hit -- i: %d -- tag: %h", $time, i, tags_q[i].vpn0);
                 // not a giga page hit so check further
                 end else if (vpn1 == tags_q[i].vpn1) begin
                     // this could be a 2 mega page hit or a 4 kB hit
@@ -120,17 +125,17 @@ module tlb import ariane_pkg::*; #(
             if (flush_i) begin
                 // invalidate logic
                 // flush everything if ASID is 0 and vaddr is 0 ("SFENCE.VMA x0 x0" case)
-        				if (asid_to_be_flushed_is0 && vaddr_to_be_flushed_is0 )
+        		if (asid_to_be_flushed_is0 && vaddr_to_be_flushed_is0 )
                     tags_n[i].valid = 1'b0;
                 // flush vaddr in all addressing space ("SFENCE.VMA vaddr x0" case), it should happen only for leaf pages
                 else if (asid_to_be_flushed_is0 && ((vaddr_vpn0_match[i] && vaddr_vpn1_match[i] && vaddr_vpn2_match[i]) || (vaddr_vpn2_match[i] && tags_q[i].is_1G) || (vaddr_vpn1_match[i] && vaddr_vpn2_match[i] && tags_q[i].is_2M) ) && (~vaddr_to_be_flushed_is0))
                     tags_n[i].valid = 1'b0;
                 // the entry is flushed if it's not global and asid and vaddr both matches with the entry to be flushed ("SFENCE.VMA vaddr asid" case)
-				        else if ((!content_q[i].g) && ((vaddr_vpn0_match[i] && vaddr_vpn1_match[i] && vaddr_vpn2_match[i]) || (vaddr_vpn2_match[i] && tags_q[i].is_1G) || (vaddr_vpn1_match[i] && vaddr_vpn2_match[i] && tags_q[i].is_2M)) && (asid_to_be_flushed_i == tags_q[i].asid) && (!vaddr_to_be_flushed_is0) && (!asid_to_be_flushed_is0))
-				          	tags_n[i].valid = 1'b0;
+		        else if ((!content_q[i].g) && ((vaddr_vpn0_match[i] && vaddr_vpn1_match[i] && vaddr_vpn2_match[i]) || (vaddr_vpn2_match[i] && tags_q[i].is_1G) || (vaddr_vpn1_match[i] && vaddr_vpn2_match[i] && tags_q[i].is_2M)) && (asid_to_be_flushed_i == tags_q[i].asid) && (!vaddr_to_be_flushed_is0) && (!asid_to_be_flushed_is0))
+			      	tags_n[i].valid = 1'b0;
                 // the entry is flushed if it's not global, and the asid matches and vaddr is 0. ("SFENCE.VMA 0 asid" case)
-				        else if ((!content_q[i].g) && (vaddr_to_be_flushed_is0) && (asid_to_be_flushed_i == tags_q[i].asid) && (!asid_to_be_flushed_is0))
-				        	  tags_n[i].valid = 1'b0;
+		        else if ((!content_q[i].g) && (vaddr_to_be_flushed_is0) && (asid_to_be_flushed_i == tags_q[i].asid) && (!asid_to_be_flushed_is0))
+				    tags_n[i].valid = 1'b0;
             // normal replacement
             end else if (update_i.valid & replace_en[i]) begin
                 // update tag array
@@ -146,7 +151,23 @@ module tlb import ariane_pkg::*; #(
                 // and content as well
                 content_n[i] = update_i.content;
                 $fdisplay(fd, "%t L1: Update from PTW: %h cont: %d i:%d", $time, update_i.vpn [18+riscv::VPN2:0], content_n[i], i);
-            end
+                break;
+            end else if (l2_tlb_hit_i & update_from_l2_tlb_i.valid & replace_en[i] & ~update_i.valid) begin
+                // update tag array
+                tags_n[i] = '{
+                asid:  update_from_l2_tlb_i.asid,
+                vpn2:  update_from_l2_tlb_i.vpn [18+riscv::VPN2:18],
+                vpn1:  update_from_l2_tlb_i.vpn [17:9],
+                vpn0:  update_from_l2_tlb_i.vpn [8:0],
+                is_1G: update_from_l2_tlb_i.is_1G,
+                is_2M: update_from_l2_tlb_i.is_2M,
+                valid: 1'b1
+                };
+                // and content as well
+                content_n[i] = update_from_l2_tlb_i.content;
+                $fdisplay(fd, "%t L1: Update from L2: %h cont: %d i:%d", $time, update_from_l2_tlb_i.vpn [18+riscv::VPN2:0], content_n[i], i);
+                break;
+            end 
         end
     end
 
@@ -156,29 +177,6 @@ module tlb import ariane_pkg::*; #(
     logic[2*(TLB_ENTRIES-1)-1:0] plru_tree_q, plru_tree_n;
     always_comb begin : plru_replacement
         plru_tree_n = plru_tree_q;
-        // The PLRU-tree indexing:
-        // lvl0        0
-        //            / \
-        //           /   \
-        // lvl1     1     2
-        //         / \   / \
-        // lvl2   3   4 5   6
-        //       / \ /\/\  /\
-        //      ... ... ... ...
-        // Just predefine which nodes will be set/cleared
-        // E.g. for a TLB with 8 entries, the for-loop is semantically
-        // equivalent to the following pseudo-code:
-        // unique case (1'b1)
-        // lu_hit[7]: plru_tree_n[0, 2, 6] = {1, 1, 1};
-        // lu_hit[6]: plru_tree_n[0, 2, 6] = {1, 1, 0};
-        // lu_hit[5]: plru_tree_n[0, 2, 5] = {1, 0, 1};
-        // lu_hit[4]: plru_tree_n[0, 2, 5] = {1, 0, 0};
-        // lu_hit[3]: plru_tree_n[0, 1, 4] = {0, 1, 1};
-        // lu_hit[2]: plru_tree_n[0, 1, 4] = {0, 1, 0};
-        // lu_hit[1]: plru_tree_n[0, 1, 3] = {0, 0, 1};
-        // lu_hit[0]: plru_tree_n[0, 1, 3] = {0, 0, 0};
-        // default: begin /* No hit */ end
-        // endcase
         for (int unsigned i = 0; i < TLB_ENTRIES; i++) begin
             automatic int unsigned idx_base, shift, new_index;
             // we got a hit so update the pointer as it was least recently used
@@ -194,20 +192,6 @@ module tlb import ariane_pkg::*; #(
                 end
             end
         end
-        // Decode tree to write enable signals
-        // Next for-loop basically creates the following logic for e.g. an 8 entry
-        // TLB (note: pseudo-code obviously):
-        // replace_en[7] = &plru_tree_q[ 6, 2, 0]; //plru_tree_q[0,2,6]=={1,1,1}
-        // replace_en[6] = &plru_tree_q[~6, 2, 0]; //plru_tree_q[0,2,6]=={1,1,0}
-        // replace_en[5] = &plru_tree_q[ 5,~2, 0]; //plru_tree_q[0,2,5]=={1,0,1}
-        // replace_en[4] = &plru_tree_q[~5,~2, 0]; //plru_tree_q[0,2,5]=={1,0,0}
-        // replace_en[3] = &plru_tree_q[ 4, 1,~0]; //plru_tree_q[0,1,4]=={0,1,1}
-        // replace_en[2] = &plru_tree_q[~4, 1,~0]; //plru_tree_q[0,1,4]=={0,1,0}
-        // replace_en[1] = &plru_tree_q[ 3,~1,~0]; //plru_tree_q[0,1,3]=={0,0,1}
-        // replace_en[0] = &plru_tree_q[~3,~1,~0]; //plru_tree_q[0,1,3]=={0,0,0}
-        // For each entry traverse the tree. If every tree-node matches,
-        // the corresponding bit of the entry's index, this is
-        // the next entry to replace.
         for (int unsigned i = 0; i < TLB_ENTRIES; i += 1) begin
             automatic logic en;
             automatic int unsigned idx_base, shift, new_index;
