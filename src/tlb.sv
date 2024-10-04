@@ -24,7 +24,6 @@ module tlb import ariane_pkg::*; #(
     input  logic                    flush_i,  // Flush signal
     // Update TLB
     input  tlb_update_t             update_i,
-    input  tlb_update_t             update_from_l2_tlb_i,
     // Lookup signals
     input  logic                    lu_access_i,
     input  logic [ASID_WIDTH-1:0]   lu_asid_i,
@@ -35,8 +34,7 @@ module tlb import ariane_pkg::*; #(
     output logic                    lu_is_2M_o,
     output logic                    lu_is_1G_o,
     output logic                    lu_hit_o,
-    //L2_TLB
-    input  logic                    l2_tlb_hit_i
+    output int   		    lu_napot_bits_o
 );
 
     // SV39 defines three levels of page tables
@@ -48,6 +46,7 @@ module tlb import ariane_pkg::*; #(
       logic                  is_2M;
       logic                  is_1G;
       logic                  valid;
+      logic                  napot_bits;
     } [TLB_ENTRIES-1:0] tags_q, tags_n;
 
     riscv::pte_t [TLB_ENTRIES-1:0] content_q, content_n;
@@ -55,7 +54,6 @@ module tlb import ariane_pkg::*; #(
     logic [riscv::VPN2:0] vpn2;
     logic [TLB_ENTRIES-1:0] lu_hit;     // to replacement logic
     logic [TLB_ENTRIES-1:0] replace_en; // replace the following entry, set by replacement strategy
-    int fd;
     //-------------
     // Translation
     //-------------
@@ -70,6 +68,7 @@ module tlb import ariane_pkg::*; #(
         lu_content_o = '{default: 0};
         lu_is_1G_o   = 1'b0;
         lu_is_2M_o   = 1'b0;
+	    lu_napot_bits_o = 1'b0;
 
         for (int unsigned i = 0; i < TLB_ENTRIES; i++) begin
             // first level match, this may be a giga page, check the ASID flags as well
@@ -81,17 +80,16 @@ module tlb import ariane_pkg::*; #(
                     lu_content_o = content_q[i];
                     lu_hit_o   = 1'b1;
                     lu_hit[i]  = 1'b1;
-                    $fdisplay(fd, "%t L1 TLB hit -- i: %d -- tag: %h", $time, i, tags_q[i].vpn0);
                 // not a giga page hit so check further
                 end else if (vpn1 == tags_q[i].vpn1) begin
                     // this could be a 2 mega page hit or a 4 kB hit
                     // output accordingly
-                    if (tags_q[i].is_2M || vpn0 == tags_q[i].vpn0) begin
+                    if (tags_q[i].is_2M || vpn0 == tags_q[i].vpn0 || (tags_q[i].napot_bits && vpn0[8:4] == tags_q[i].vpn0[8:4])) begin
+			            lu_napot_bits_o = tags_q[i].napot_bits;
                         lu_is_2M_o   = tags_q[i].is_2M;
                         lu_content_o = content_q[i];
                         lu_hit_o     = 1'b1;
                         lu_hit[i]    = 1'b1;
-                        $fdisplay(fd, "%t L1 TLB hit -- i: %d -- tag: %h", $time, i, tags_q[i].vpn0);
                     end
                 end
             end
@@ -146,27 +144,11 @@ module tlb import ariane_pkg::*; #(
                     vpn0:  update_i.vpn [8:0],
                     is_1G: update_i.is_1G,
                     is_2M: update_i.is_2M,
-                    valid: 1'b1
+                    valid: 1'b1,
+            	    napot_bits: update_i.napot_bits
                 };
                 // and content as well
                 content_n[i] = update_i.content;
-                $fdisplay(fd, "%t L1: Update from PTW: %h cont: %d i:%d", $time, update_i.vpn [18+riscv::VPN2:0], content_n[i], i);
-                break;
-            end else if (l2_tlb_hit_i & update_from_l2_tlb_i.valid & replace_en[i] & ~update_i.valid) begin
-                // update tag array
-                tags_n[i] = '{
-                asid:  update_from_l2_tlb_i.asid,
-                vpn2:  update_from_l2_tlb_i.vpn [18+riscv::VPN2:18],
-                vpn1:  update_from_l2_tlb_i.vpn [17:9],
-                vpn0:  update_from_l2_tlb_i.vpn [8:0],
-                is_1G: update_from_l2_tlb_i.is_1G,
-                is_2M: update_from_l2_tlb_i.is_2M,
-                valid: 1'b1
-                };
-                // and content as well
-                content_n[i] = update_from_l2_tlb_i.content;
-                $fdisplay(fd, "%t L1: Update from L2: %h cont: %d i:%d", $time, update_from_l2_tlb_i.vpn [18+riscv::VPN2:0], content_n[i], i);
-                break;
             end 
         end
     end
@@ -255,7 +237,4 @@ module tlb import ariane_pkg::*; #(
 
     `endif
     //pragma translate_on
-    initial begin
-        fd = $fopen("tlb.txt", "w");
-    end
 endmodule

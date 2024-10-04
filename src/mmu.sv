@@ -83,19 +83,23 @@ module mmu import ariane_pkg::*; #(
     logic        itlb_is_2M;
     logic        itlb_is_1G;
     logic        itlb_lu_hit;
+    logic        itlb_napot_bit;
 
     logic        dtlb_lu_access;
     riscv::pte_t dtlb_content;
     logic        dtlb_is_2M;
     logic        dtlb_is_1G;
     logic        dtlb_lu_hit;
+    logic          dtlb_napot_bit;
         
-    logic [9:0]  l2_tlb_hit;
-    tlb_update_t l1_tlb_update;
+    logic l2_tlb_hit;
+    tlb_update_t update_itlb, update_dtlb, update_d, update_i;
 
     // Assignments
     assign itlb_lu_access = icache_areq_i.fetch_req;
     assign dtlb_lu_access = lsu_req_i;
+    assign update_d = (l2_tlb_hit) ? update_dtlb : update_ptw_dtlb;
+    assign update_i = (l2_tlb_hit & ~dtlb_lu_access) ? update_itlb : update_ptw_itlb;
 
 
     tlb #(
@@ -106,7 +110,7 @@ module mmu import ariane_pkg::*; #(
         .rst_ni           ( rst_ni                     ),
         .flush_i          ( flush_tlb_i                ),
 
-        .update_i         ( update_ptw_itlb            ),
+        .update_i         ( update_i		       ),
 
         .lu_access_i      ( itlb_lu_access             ),
         .lu_asid_i        ( asid_i                     ),
@@ -118,9 +122,7 @@ module mmu import ariane_pkg::*; #(
         .lu_is_2M_o       ( itlb_is_2M                 ),
         .lu_is_1G_o       ( itlb_is_1G                 ),
         .lu_hit_o         ( itlb_lu_hit                ),
-        //L2_TLB        
-        .update_from_l2_tlb_i (l1_tlb_update),
-        .l2_tlb_hit_i         (l2_tlb_hit)//l2_tlb_hit, 0
+        .lu_napot_bits_o  ( itlb_napot_bit	       )
     );
 
     tlb #(
@@ -131,7 +133,7 @@ module mmu import ariane_pkg::*; #(
         .rst_ni           ( rst_ni                      ),
         .flush_i          ( flush_tlb_i                 ),
 
-        .update_i         ( update_ptw_dtlb             ),
+        .update_i         ( update_d			),
 
         .lu_access_i      ( dtlb_lu_access              ),
         .lu_asid_i        ( asid_i                      ),
@@ -143,34 +145,41 @@ module mmu import ariane_pkg::*; #(
         .lu_is_2M_o       ( dtlb_is_2M                  ),
         .lu_is_1G_o       ( dtlb_is_1G                  ),
         .lu_hit_o         ( dtlb_lu_hit                 ),
-        //L2_TLB        
-        .update_from_l2_tlb_i (l1_tlb_update),
-        .l2_tlb_hit_i         (l2_tlb_hit)//l2_tlb_hit, 0
+        .lu_napot_bits_o  ( dtlb_napot_bit              )
     );
+
     l2_tlb #(
-        .SETS             (128),
-        .WAYS             (4),
-        .POW              (7),
+        .L2_TLB_DEPTH     (64),
+        .L2_TLB_WAYS      (16),
         .ASID_WIDTH       (ASID_WIDTH)
     ) l2_tlb (
-        .clk_i            (clk_i),
-        .rst_ni           (rst_ni),
-        .flush_i          (flush_tlb_i),
-        // .lu_asid_i            (asid_i),      
-        .dtlb_lu_access_i (dtlb_lu_access),
-        .itlb_lu_access_i (itlb_lu_access),
-        .dtlb_vaddr_i     (lsu_vaddr_i),
-        .itlb_vaddr_i     (icache_areq_i.fetch_vaddr),
-        .asid_to_be_flushed_i   (asid_to_be_flushed_i),
-        .vaddr_to_be_flushed_i  (vaddr_to_be_flushed_i),
-        .dtlb_update_in   (update_ptw_dtlb),
-        .itlb_update_in   (update_ptw_itlb),
-        .l1_dtlb_hit      (dtlb_lu_hit),
-        .l1_itlb_hit      (itlb_lu_hit),       
-        .l2_tlb_hit_o     (l2_tlb_hit),
-        .l1_tlb_update_o  (l1_tlb_update),
+        .clk_i              (clk_i),
+        .rst_ni             (rst_ni),
+        .flush_i            (flush_tlb_i),
+
         .enable_translation_i  (enable_translation_i),
-        .en_ld_st_translation_i(en_ld_st_translation_i)
+        .en_ld_st_translation_i(en_ld_st_translation_i),
+
+        .asid_i             (asid_i),
+        // from TLBs
+        // did we miss?
+        .itlb_access_i      (itlb_lu_access),
+        .itlb_hit_i         (itlb_lu_hit),
+        .itlb_vaddr_i       (icache_areq_i.fetch_vaddr), 
+
+        .dtlb_access_i      (dtlb_lu_access),
+        .dtlb_hit_i         (dtlb_lu_hit),
+        .dtlb_vaddr_i       (lsu_vaddr_i),
+
+        // to TLBs, update logic
+        .itlb_update_o      (update_itlb),
+        .dtlb_update_o      (update_dtlb),
+
+        .l2_tlb_hit_o       (l2_tlb_hit),
+
+        // to update l2 tlb
+        .l2_tlb_update_itlb_i(update_ptw_itlb),
+        .l2_tlb_update_dtlb_i(update_ptw_dtlb)
     );
 
     ptw  #(
@@ -198,8 +207,7 @@ module mmu import ariane_pkg::*; #(
         .dtlb_vaddr_i           ( lsu_vaddr_i           ),
         
         //L2_TLB
-        .l2_tlb_hit_i          (l2_tlb_hit),//l2_tlb_hit, 0
-        .l2_tlb_vaddr_i        (l1_tlb_update),
+        .l2_tlb_hit_i          (l2_tlb_hit),
 
         .req_port_i             ( req_port_i            ),
         .req_port_o             ( req_port_o            ),
@@ -332,6 +340,7 @@ module mmu import ariane_pkg::*; #(
     logic        dtlb_hit_n,      dtlb_hit_q;
     logic        dtlb_is_2M_n,    dtlb_is_2M_q;
     logic        dtlb_is_1G_n,    dtlb_is_1G_q;
+    logic        dtlb_napot_bit_n,dtlb_napot_bit_q;
 
     // check if we need to do translation or if we are always ready (e.g.: we are not translating anything)
     assign lsu_dtlb_hit_o = (en_ld_st_translation_i) ? dtlb_lu_hit :  1'b1;
@@ -351,6 +360,7 @@ module mmu import ariane_pkg::*; #(
         lsu_is_store_n        = lsu_is_store_i;
         dtlb_is_2M_n          = dtlb_is_2M;
         dtlb_is_1G_n          = dtlb_is_1G;
+	    dtlb_napot_bit_n      = dtlb_napot_bit;
 
         lsu_paddr_o           = lsu_vaddr_q[riscv::PLEN-1:0];
         lsu_dtlb_ppn_o        = lsu_vaddr_n[riscv::PLEN-1:12];
@@ -381,6 +391,11 @@ module mmu import ariane_pkg::*; #(
                 lsu_paddr_o[PPNWMin:12] = lsu_vaddr_q[PPNWMin:12];
                 lsu_dtlb_ppn_o[PPNWMin:12] = lsu_vaddr_n[PPNWMin:12];
             end
+            //SVNAPOT
+            if (dtlb_napot_bit_q != 0) begin
+                    lsu_paddr_o[15:12] = lsu_vaddr_q[15:12];
+                    lsu_dtlb_ppn_o[15:12] = lsu_vaddr_n[15:12];
+	    end
             // ---------
             // DTLB Hit
             // --------
@@ -477,6 +492,7 @@ module mmu import ariane_pkg::*; #(
             lsu_is_store_q   <= '0;
             dtlb_is_2M_q     <= '0;
             dtlb_is_1G_q     <= '0;
+	        dtlb_napot_bit_q <= '0;
         end else begin
             lsu_vaddr_q      <=  lsu_vaddr_n;
             lsu_req_q        <=  lsu_req_n;
@@ -486,6 +502,7 @@ module mmu import ariane_pkg::*; #(
             lsu_is_store_q   <=  lsu_is_store_n;
             dtlb_is_2M_q     <=  dtlb_is_2M_n;
             dtlb_is_1G_q     <=  dtlb_is_1G_n;
+	        dtlb_napot_bit_q <=  dtlb_napot_bit_n;
         end
     end
 endmodule
